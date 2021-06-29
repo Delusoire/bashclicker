@@ -1,0 +1,106 @@
+#!/bin/bash
+
+dev=${1-/dev/input/event5}
+
+event-parse () {
+  printf '%08x%04x%04x%024x%08x' "$3" "$2" "$1" "0" "$(date +%s)"
+}
+
+event-queue () {
+  # event-queue type code value
+  buf+=`event-parse $*`
+}
+
+event-send () {
+  echo "$buf"                             |\
+    # Hexify
+    xxd -r -p                             |\
+    # Convert to Little-Endian
+    perl -0777e 'print scalar reverse <>' |\
+    # Inject
+    sudo tee "$dev" >/dev/null
+
+  buf=
+}
+
+emulate-key () {
+  event-queue 0 0    0       # EV_SYN SYN_REPORT
+  event-queue 1 "$1" "$2"    # EV_KEY KEY/BTN UP/DOWN
+  event-queue 4 4    0x90001 # EV_MSC MSC_SCAN
+  event-send
+}
+
+emulate-keydown () {
+  emulate-key "$1" 1
+}
+
+emulate-keyup () {
+  emulate-key "$1" 0
+}
+
+emulate-keypress () {
+  # sendkeypress keycode duration
+  emulate-keydown "$1"
+  sleep           "$2"
+  emulate-keyup   "$1"
+}
+
+stdio-unbuffer () {
+  script -q -c "$*" /dev/null
+}
+
+date-now () {
+  date +%s%N | cut -c 1-13
+}
+
+get-random () {
+  echo "$(($1 + ($RANDOM % ($2 - $1))))"
+}
+
+err () {
+  printf -- "$* \n" >&2
+}
+
+{
+  clicks=()
+  lmb=`event-parse 1 0x110 0 | cut -c 1-16`
+  stdio-unbuffer sudo od -vt x8 -w8 --endian=little "$dev"  |\
+    rg --line-buffered "$lmb" | while read; do
+      now=`date-now`
+
+      ((delay && delay < now)) && {
+        delay=
+        continue
+      }
+
+      S=()
+      for k in "${!clicks[@]}"; do
+        S+=($((now - clicks[k])))
+        ((S[-1] > 1000)) && unset "clicks[$k]"
+      done
+
+      clicks=("$now" ${clicks[@]})
+      ((${#S[@]} > 1)) || continue
+
+      ((n=0, d=0, p=0, B=1000 * S[-1] * S[-1]))
+      for s in "${S[@]}"; do
+        ((d += i = (B / (s * s)), \
+          n += i * (s - p), \
+          p = s))
+      done
+
+      ((delay=(`get-random 8 12` * n / (20 * d)) < 369)) && echo "$((delay+=now))" || delay=
+    done
+} | {
+  while :; do
+    read -t 0 && read line && {
+      ((delay && delay < line)) && continue
+      delay="$line"
+    }
+
+    ((delay && delay < `date-now`)) && {
+      delay=
+      emulate-keypress 0x110 0 # Left Mouse Button
+    }
+  done
+} &
