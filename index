@@ -68,18 +68,17 @@ err () {
     rg --line-buffered "$lmb" | while read; do
       now=`date-now`
 
-      ((delay && delay < now)) && {
+      ((! `cat $0/state` || delay && delay < now)) && {
         delay=
         continue
       }
+      clicks=("$now" ${clicks[@]})
 
       S=()
       for k in "${!clicks[@]}"; do
         S+=($((now - clicks[k])))
         ((S[-1] > 1000)) && unset "clicks[$k]"
       done
-
-      clicks=("$now" ${clicks[@]})
       ((${#S[@]} > 1)) || continue
 
       ((n=0, d=0, p=0, B=1000 * S[-1] * S[-1]))
