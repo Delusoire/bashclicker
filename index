@@ -3,7 +3,7 @@
 dev=${1-/dev/input/event5}
 
 event-parse () {
-  printf '%08x%04x%04x%024x%08x' "$3" "$2" "$1" "0" "$(date +%s)"
+  printf '%08x%04x%04x%016x%016x' "$3" "$2" "$1" "$(date +%N)" "$(date +%s)"
 }
 
 event-queue () {
@@ -13,7 +13,7 @@ event-queue () {
 
 event-send () {
   echo "$buf"                             |\
-    # Hexify
+    # UnHexify
     xxd -r -p                             |\
     # Convert to Little-Endian
     perl -0777e 'print scalar reverse <>' |\
@@ -53,53 +53,51 @@ date-now () {
   date +%s%N | cut -c 1-13
 }
 
-get-random () {
+random () {
   echo "$(($1 + ($RANDOM % ($2 - $1))))"
 }
 
-err () {
-  printf -- "$* \n" >&2
-}
+# constants
+lmb=`event-parse 1 0x110 0 | cut -c 1-16`
+clicks=()
 
-{
-  clicks=()
-  lmb=`event-parse 1 0x110 0 | cut -c 1-16`
-  stdio-unbuffer sudo od -vt x8 -w8 --endian=little "$dev"  |\
-    rg --line-buffered "$lmb" | while read; do
-      now=`date-now`
+stdio-unbuffer sudo od -vt x8 -w24 --endian=little "$dev" |\
+while :; do
+  test ! `cat $(dirname "$0")/state` && continue
 
-      ((! `cat $0/state` || delay && delay < now)) && {
-        delay=
-        continue
-      }
-      clicks=("$now" ${clicks[@]})
+  now=`date-now`
+  read -n 24 -t 0 && {
+    read -n 24 -d ' ' _ tv_sec tv_usec _
+    ((skip--)) && continue || skip=0
 
+    type=`cut -c 13-16 <<< "$_"`
+    code=`cut -c 9-12 <<< "$_"`
+    value=`cut -c 1-8 <<< "$_"`
+
+    rg -q "\^$lmb\$" <<< "$value$code$type" && {
       S=()
       for k in "${!clicks[@]}"; do
         S+=($((now - clicks[k])))
         ((S[-1] > 1000)) && unset "clicks[$k]"
       done
-      ((${#S[@]} > 1)) || continue
+      clicks=("$now" ${clicks[@]})
 
-      ((n=0, d=0, p=0, B=1000 * S[-1] * S[-1]))
-      for s in "${S[@]}"; do
-        ((d += i = (B / (s * s)), \
-          n += i * (s - p), \
-          p = s))
-      done
+      ((${#S[@]} > 1)) && {
+        ((n=0, m=0, p=0, B=1000 * S[-1] * S[-1]))
+        for s in "${S[@]}"; do
+          ((m += i = (B / (s * s)), \
+            n += i * (s - p), \
+            p = s))
+        done
 
-      ((delay=(`get-random 8 12` * n / (20 * d)) < 369)) && echo "$((delay+=now))" || delay=
-    done
-} | {
-  while :; do
-    read -t 0 && read line && {
-      ((delay && delay < line)) && continue
-      delay="$line"
+        ((d=`random 8 12` * n / (20 * m)))
+        ((d < 369)) && (((d+=now) < delay || ! delay)) && delay=d
+      }
     }
+  }
 
-    ((delay && delay < `date-now`)) && {
-      delay=
-      emulate-keypress 0x110 0 # Left Mouse Button
-    }
-  done
-} &
+  ((delay && delay < now)) && {
+    ((delay=, skip++))
+    emulate-keypress 0x110 0 # Left Mouse Button
+  }
+done
