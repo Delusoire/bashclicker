@@ -3,7 +3,7 @@
 dev=${1-/dev/input/event5}
 
 event-parse () {
-  printf '%08x%04x%04x%016x%016x' "$3" "$2" "$1" "$(date +%N)" "$(date +%s)"
+  printf '%08x%04x%04x%016x%016x' "$3" "$2" "$1" "$(date +%-N | rg '^0+' -r '')" "$(date +%-s)"
 }
 
 event-queue () {
@@ -57,24 +57,30 @@ random () {
   echo "$(($1 + ($RANDOM % ($2 - $1))))"
 }
 
+# 0000000060ddf8fa00000000000ea6900000000101100001
 # constants
-lmb=`event-parse 1 0x110 0 | cut -c 1-16`
+skip=0
 clicks=()
+lmb=`event-parse 1 0x110 0 | cut -c 1-16`
 
 stdio-unbuffer sudo od -vt x8 -w24 --endian=little "$dev" |\
 while :; do
   test ! `cat $(dirname "$0")/state` && continue
 
   now=`date-now`
-  read -n 24 -t 0 && {
-    read -n 24 -d ' ' _ tv_sec tv_usec _
-    ((skip--)) && continue || skip=0
+  read -t 0 && {
+    read event
+    event=`printf "$event" | tr -d ' ' | cut -c 8-`
 
-    type=`cut -c 13-16 <<< "$_"`
-    code=`cut -c 9-12 <<< "$_"`
-    value=`cut -c 1-8 <<< "$_"`
+    tv_sec=`cut -c 1-16 <<< "$event"`
+    tv_usec=`cut -c 17-32 <<< "$event"`
+    type=`cut -c 45-48 <<< "$event"`
+    code=`cut -c 41-44 <<< "$event"`
+    value=`cut -c 33-40 <<< "$event"`
 
-    rg -q "\^$lmb\$" <<< "$value$code$type" && {
+    rg -q "^$lmb$" <<< "$value$code$type" && {
+      ((skip--)) && continue || ((skip=0))
+    
       S=()
       for k in "${!clicks[@]}"; do
         S+=($((now - clicks[k])))
@@ -97,7 +103,8 @@ while :; do
   }
 
   ((delay && delay < now)) && {
-    ((delay=, skip++))
+    ((delay=0, skip++))
+    printf "<lmb>"
     emulate-keypress 0x110 0 # Left Mouse Button
   }
 done
