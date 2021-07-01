@@ -57,8 +57,6 @@ random () {
   echo "$(($1 + ($RANDOM % ($2 - $1))))"
 }
 
-# 0000000060ddf8fa00000000000ea6900000000101100001
-# constants
 skip=0
 clicks=()
 lmb=`event-parse 1 0x110 0 | cut -c 1-16`
