@@ -1,6 +1,6 @@
 #!/bin/bash
 
-0x0 () { printf "0x0";  cat -; }
+err () { echo $* >&2; }
 
 hex-endian-swap () {
   h=$(printf "%0$((a=$1 + $1 % 2))x" "$(cat -)")
@@ -11,9 +11,10 @@ hex-endian-swap () {
 }
 
 date-now () { date +%s%N | cut -c 1-13; }
+timer-start () { timer=$(date-now); }
+timer-stop () { err $(($(date-now) - timer)); }
 
 random () { echo "$(($1 + ($RANDOM % ($2 - $1))))"; }
 
 stdio-unbuffer () { SHELL=/bin/bash script -q -c "$*" /dev/null; }
 
-err () { echo $* >&2; }

@@ -1,19 +1,19 @@
 #!/bin/bash
 
 event-pack () {
-  tv_sec=`  date +%-s | hex-endian-swap 16`
-  tv_usec=` date +%-N | rg '^0*(.*)' -r '$1' | hex-endian-swap 16`
-  type=`    hex-endian-swap 4 <<< "$1"`
-  code=`    hex-endian-swap 4 <<< "$2"`
-  value=`   hex-endian-swap 8 <<< "$3"`
+  tv_sec=$( date +%-s | hex-endian-swap 16)
+  tv_usec=$(date +%-N | rg '^0*(.*)' -r '$1' | hex-endian-swap 16)
+  type=$(   hex-endian-swap  4 <<< "$1")
+  code=$(   hex-endian-swap  4 <<< "$2")
+  value=$(  hex-endian-swap  8 <<< "$3")
 }
 
 event-unpack () {
-  tv_sec=`  cut -c 01-16 <<< "$event" | 0x0 | hex-endian-swap 16`
-  tv_usec=` cut -c 17-32 <<< "$event" | 0x0 | hex-endian-swap 16`
-  type=`    cut -c 33-36 <<< "$event" | 0x0 | hex-endian-swap  4`
-  code=`    cut -c 37-40 <<< "$event" | 0x0 | hex-endian-swap  4`
-  value=`   cut -c 41-48 <<< "$event" | 0x0 | hex-endian-swap  8`
+  tv_sec=$( hex-endian-swap 16 <<< "0x0${event: 0:16}")
+  tv_usec=$(hex-endian-swap 16 <<< "0x0${event:16:16}")
+  type=$(   hex-endian-swap  4 <<< "0x0${event:32: 4}")
+  code=$(   hex-endian-swap  4 <<< "0x0${event:36: 4}")
+  value=$(  hex-endian-swap  8 <<< "0x0${event:40: 8}")
 }
 
 event-parse () {
@@ -33,9 +33,9 @@ event-emit () {
 }
 
 emulate-key () {
-  event-queue 0 0    0       # EV_SYN SYN_REPORT
-  event-queue 1 "$1" "$2"    # EV_KEY KEY/BTN UP/DOWN
   event-queue 4 4    0x90001 # EV_MSC MSC_SCAN
+  event-queue 1 "$1" "$2"    # EV_KEY KEY/BTN UP/DOWN
+  event-queue 0 0    0       # EV_SYN SYN_REPORT
   event-emit
 }
 
