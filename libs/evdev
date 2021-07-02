@@ -1,0 +1,51 @@
+#!/bin/bash
+
+event-pack () {
+  tv_sec=`  date +%-s | hex-endian-swap 16`
+  tv_usec=` date +%-N | rg '^0*(.*)' -r '$1' | hex-endian-swap 16`
+  type=`    hex-endian-swap 4 <<< "$1"`
+  code=`    hex-endian-swap 4 <<< "$2"`
+  value=`   hex-endian-swap 8 <<< "$3"`
+}
+
+event-unpack () {
+  tv_sec=`  cut -c 01-16 <<< "$event" | 0x0 | hex-endian-swap 16`
+  tv_usec=` cut -c 17-32 <<< "$event" | 0x0 | hex-endian-swap 16`
+  type=`    cut -c 33-36 <<< "$event" | 0x0 | hex-endian-swap  4`
+  code=`    cut -c 37-40 <<< "$event" | 0x0 | hex-endian-swap  4`
+  value=`   cut -c 41-48 <<< "$event" | 0x0 | hex-endian-swap  8`
+}
+
+event-parse () {
+  event=$tv_sec$tv_usec$type$code$value
+}
+
+# event-queue type code value
+event-queue () {
+  event-pack $*
+  event-parse
+  buf+=$event
+}
+
+event-emit () {
+  xxd -r -p <<< "$buf" | sudo tee "$dev" >/dev/null
+  buf=
+}
+
+emulate-key () {
+  event-queue 0 0    0       # EV_SYN SYN_REPORT
+  event-queue 1 "$1" "$2"    # EV_KEY KEY/BTN UP/DOWN
+  event-queue 4 4    0x90001 # EV_MSC MSC_SCAN
+  event-emit
+}
+
+emulate-keydown () { emulate-key "$1" 1; }
+emulate-keyup   () { emulate-key "$1" 0; }
+
+# send-keypress keycode duration
+emulate-keypress () {
+  emulate-keydown "$1"
+  sleep           "$2"
+  emulate-keyup   "$1"
+}
+

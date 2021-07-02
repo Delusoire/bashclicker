@@ -2,86 +2,15 @@
 
 dev=${1-/dev/input/event5}
 
-hex-endian-swap () {
-  ((s=$1 + $1 % 2))
-  h=`printf "%0${s}x"`
-
-  while ((s > 0)); do
-    p+=${t:s-=2:2}
-  done
-
-  echo "$p"
-}
-
-event-pack () {
-  tv_sec=`  date +%-s | hex-endian-swap 16`
-  tv_usec=` date +%-N | rg '^0+' -r '' | hex-endian-swap 16`
-  type=`    hex-endian-swap 4 <<< "$1"`
-  code=`    hex-endian-swap 4 <<< "$2"`
-  value=`   hex-endian-swap 8 <<< "$3"`
-}
-
-event-unpack () {
-  tv_sec=`  cut -c 01-16 | hex-endian-swap 16`
-  tv_usec=` cut -c 17-32 | hex-endian-swap 16`
-  type=`    cut -c 33-40 | hex-endian-swap 4`
-  code=`    cut -c 41-44 | hex-endian-swap 4`
-  value=`   cut -c 45-48 | hex-endian-swap 8`
-}
-
-event-queue () {
-  # event-queue type code value
-  event-pack $*
-  buf+=$tv_sec$tv_usec$type$code$value
-}
-
-event-send () {
-  echo "$buf"                             |\
-    # UnHexify
-    xxd -r -p                             |\
-    # Inject
-    sudo tee "$dev" >/dev/null
-
-  buf=
-}
-
-emulate-key () {
-  event-queue 0 0    0       # EV_SYN SYN_REPORT
-  event-queue 1 "$1" "$2"    # EV_KEY KEY/BTN UP/DOWN
-  event-queue 4 4    0x90001 # EV_MSC MSC_SCAN
-  event-send
-}
-
-emulate-keydown () {
-  emulate-key "$1" 1
-}
-
-emulate-keyup () {
-  emulate-key "$1" 0
-}
-
-emulate-keypress () {
-  # send-keypress keycode duration
-  emulate-keydown "$1"
-  sleep           "$2"
-  emulate-keyup   "$1"
-}
-
-stdio-unbuffer () {
-  script -q -c "$*" /dev/null
-}
-
-date-now () {
-  date +%s%N | cut -c 1-13
-}
-
-random () {
-  echo "$(($1 + ($RANDOM % ($2 - $1))))"
-}
-
-clicks=()
 cwd=`dirname "$0"`
-lmb=`event-pack 1 0x110 0 | cut -c 33-`
+
+. "$cwd"/libs/util
+. "$cwd"/libs/evdev
+
+event-pack 1 0x110 0
+event-parse
+event-unpack
+lmb=$value$code$type
 
 stdio-unbuffer sudo xxd -p -c 24 "$dev" |\
 while true; do
@@ -89,8 +18,7 @@ while true; do
 
   now=`date-now`
   read -t 0 && {
-    read event
-    event-unpack <<< "$event"
+    read event && event-unpack
 
     rg -q "^$lmb$" <<< "$value$code$type" && {
       ((skip--)) && continue || ((skip=0))

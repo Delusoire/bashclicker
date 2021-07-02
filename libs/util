@@ -1,0 +1,19 @@
+#!/bin/bash
+
+0x0 () { printf "0x0";  cat -; }
+
+hex-endian-swap () {
+  h=$(printf "%0$((a=$1 + $1 % 2))x" "$(cat -)")
+
+  for ((s = "${#h}"; (s-=2) >= 0;)); do
+    printf "${h:s:2}"
+  done
+}
+
+date-now () { date +%s%N | cut -c 1-13; }
+
+random () { echo "$(($1 + ($RANDOM % ($2 - $1))))"; }
+
+stdio-unbuffer () { SHELL=/bin/bash script -q -c "$*" /dev/null; }
+
+err () { echo $* >&2; }
