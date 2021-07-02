@@ -1,4 +1,4 @@
-### Dead simple autoclicker made in bash for linux systems.
+### Dead simple auto-clicker made in bash for Linux systems.
 
 ## Features
 1. No setup needed
