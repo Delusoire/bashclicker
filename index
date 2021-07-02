@@ -2,21 +2,43 @@
 
 dev=${1-/dev/input/event5}
 
-event-parse () {
-  printf '%08x%04x%04x%016x%016x' "$3" "$2" "$1" "$(date +%-N | rg '^0+' -r '')" "$(date +%-s)"
+hex-endian-swap () {
+  ((s=$1 + $1 % 2))
+  h=`printf "%0${s}x"`
+
+  while ((s > 0)); do
+    p+=${t:s-=2:2}
+  done
+
+  echo "$p"
+}
+
+event-pack () {
+  tv_sec=`  date +%-s | hex-endian-swap 16`
+  tv_usec=` date +%-N | rg '^0+' -r '' | hex-endian-swap 16`
+  type=`    hex-endian-swap 4 <<< "$1"`
+  code=`    hex-endian-swap 4 <<< "$2"`
+  value=`   hex-endian-swap 8 <<< "$3"`
+}
+
+event-unpack () {
+  tv_sec=`  cut -c 01-16 | hex-endian-swap 16`
+  tv_usec=` cut -c 17-32 | hex-endian-swap 16`
+  type=`    cut -c 33-40 | hex-endian-swap 4`
+  code=`    cut -c 41-44 | hex-endian-swap 4`
+  value=`   cut -c 45-48 | hex-endian-swap 8`
 }
 
 event-queue () {
   # event-queue type code value
-  buf+=`event-parse $*`
+  event-pack $*
+  buf+=$tv_sec$tv_usec$type$code$value
 }
 
 event-send () {
   echo "$buf"                             |\
     # UnHexify
     xxd -r -p                             |\
-    # Convert to Little-Endian
-    perl -0777e 'print scalar reverse <>' |\
     # Inject
     sudo tee "$dev" >/dev/null
 
@@ -39,7 +61,7 @@ emulate-keyup () {
 }
 
 emulate-keypress () {
-  # sendkeypress keycode duration
+  # send-keypress keycode duration
   emulate-keydown "$1"
   sleep           "$2"
   emulate-keyup   "$1"
@@ -57,24 +79,18 @@ random () {
   echo "$(($1 + ($RANDOM % ($2 - $1))))"
 }
 
-skip=0
 clicks=()
-lmb=`event-parse 1 0x110 0 | cut -c 1-16`
+cwd=`dirname "$0"`
+lmb=`event-pack 1 0x110 0 | cut -c 33-`
 
-stdio-unbuffer sudo od -vt x8 -w24 --endian=little "$dev" |\
-while :; do
-  test ! `cat $(dirname "$0")/state` && continue
+stdio-unbuffer sudo xxd -p -c 24 "$dev" |\
+while true; do
+  test ! `cat "$cwd"/state` && continue
 
   now=`date-now`
   read -t 0 && {
     read event
-    event=`printf "$event" | tr -d ' ' | cut -c 8-`
-
-    tv_sec=`cut -c 1-16 <<< "$event"`
-    tv_usec=`cut -c 17-32 <<< "$event"`
-    type=`cut -c 45-48 <<< "$event"`
-    code=`cut -c 41-44 <<< "$event"`
-    value=`cut -c 33-40 <<< "$event"`
+    event-unpack <<< "$event"
 
     rg -q "^$lmb$" <<< "$value$code$type" && {
       ((skip--)) && continue || ((skip=0))
@@ -102,7 +118,6 @@ while :; do
 
   ((delay && delay < now)) && {
     ((delay=0, skip++))
-    printf "<lmb>"
     emulate-keypress 0x110 0 # Left Mouse Button
   }
 done
