@@ -20,7 +20,7 @@ while true; do
   read -t 0 && {
     read event && event-unpack
 
-    rg -q "^$lmb$" <<< "$value$code$type" && {
+    test "$value$code$type" = "$lmb" && {
       ((skip--)) && continue || ((skip=0))
     
       S=()

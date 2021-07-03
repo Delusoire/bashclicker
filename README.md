@@ -12,5 +12,4 @@
 ```
 
 ## External dependencies
-ripgrep
 xxd-standalone
